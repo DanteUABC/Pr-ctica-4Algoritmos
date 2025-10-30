@@ -1,0 +1,409 @@
+package eightoff;
+
+import java.net.URL;
+import java.util.Arrays;
+import java.util.List;
+import java.util.ResourceBundle;
+import javafx.application.Platform;
+import javafx.fxml.FXML;
+import javafx.fxml.Initializable;
+import javafx.geometry.Insets;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.text.Font;
+
+public class EightOffGUIController implements Initializable 
+{
+
+    private EightOff eightOff;
+
+    private List<ImageView> reserveViews;
+    private List<Pane> tableauPanes;
+    private List<ImageView> foundationViews;
+
+    @FXML private HBox contenedorBotonesReserva;
+    @FXML private HBox contenedorBotonesTableau;
+
+    private enum TipoMovimiento 
+    {
+        NONE,
+        TABLEAU_TO_TABLEAU,
+        TABLEAU_TO_RESERVE,
+        TABLEAU_TO_FOUNDATION,
+        RESERVE_TO_TABLEAU,
+        RESERVE_TO_FOUNDATION
+    }
+    private TipoMovimiento currentMoveType = TipoMovimiento.NONE;
+    private int origenIdx = -1;
+
+    
+    @FXML private Button deshacerMovimientoBoton;
+    @FXML private ImageView foundationClubImg;
+    @FXML private ImageView foundationDiamondImg;
+    @FXML private ImageView foundationHeartImg;
+    @FXML private ImageView foundationSpadeImg;
+    @FXML private Button obtenerPistaBoton;
+    @FXML private Button reservaAFoundationBoton;
+    @FXML private Button reservaATableauBoton;
+    @FXML private ImageView reserve1, reserve2, reserve3, reserve4, reserve5, reserve6, reserve7, reserve8;
+    @FXML private Button salirJuegoBoton;
+    @FXML private Button tableauAFoundationBoton;
+    @FXML private Button tableauAReservaBoton;
+    @FXML private Button tableauATableauBoton;
+    @FXML private Pane tableauPane1, tableauPane2, tableauPane3, tableauPane4, tableauPane5, tableauPane6, tableauPane7, tableauPane8;
+
+    
+    @Override
+    public void initialize(URL url, ResourceBundle rb) 
+    {
+        eightOff = new EightOff();
+        eightOff.iniciarJuego();
+
+        reserveViews = Arrays.asList(reserve1, reserve2, reserve3, reserve4, reserve5, reserve6, reserve7, reserve8);
+        tableauPanes = Arrays.asList(tableauPane1, tableauPane2, tableauPane3, tableauPane4, tableauPane5, tableauPane6, tableauPane7, tableauPane8);
+        foundationViews = Arrays.asList(foundationClubImg, foundationDiamondImg, foundationHeartImg, foundationSpadeImg);
+
+        conectarBotonesMenu();
+
+        crearBotonesDeSeleccion();
+        resetMoveState();
+
+        actualizarTodasLasVistas();
+    }
+
+    private void actualizarTodasLasVistas() {
+        actualizarVistaTableau();
+        actualizarVistaReserva();
+        actualizarVistaFoundation();
+    }
+
+    private void actualizarVistaTableau() {
+        for (int i = 0; i < tableauPanes.size(); i++) {
+            Pane currentPane = tableauPanes.get(i);
+            currentPane.getChildren().clear();
+
+            TableauDeck tableauDeck = (TableauDeck) eightOff.getTableau().buscaPosicion(i);
+            if (tableauDeck == null) 
+                continue;
+
+            ListaSimple<CartaInglesa> cartas = tableauDeck.getCards();
+            
+            Nodo r = cartas.getInicio();
+            int j = 0;
+            while (r != null) 
+            {
+                CartaInglesa carta = (CartaInglesa) r.getDato();
+                
+                try 
+                {
+                    String rutaImagen = getRutaImagen(carta);
+                    ImageView cartaVista = new ImageView(new Image(rutaImagen));
+                    
+                    cartaVista.setFitWidth(80);
+                    cartaVista.setFitHeight(120);
+                    cartaVista.setPreserveRatio(true);
+                    
+                    cartaVista.setLayoutY(j * 30); 
+                    
+                    currentPane.getChildren().add(cartaVista);
+                    
+                } catch (Exception e) 
+                {
+                    System.err.println("Error al cargar imagen: " + getRutaImagen(carta));
+                }
+                
+                j++;
+                r = r.getSig();
+            }
+        }
+    }
+
+    private void actualizarVistaReserva() {
+        for (int i = 0; i < reserveViews.size(); i++) 
+        {
+            ReserveDeck rd = (ReserveDeck) eightOff.getReserva().buscaPosicion(i);
+            ImageView iv = reserveViews.get(i);
+            
+            if (rd == null || rd.isEmpty())
+                iv.setImage(null);
+            else 
+            {
+                try {
+                    iv.setImage(new Image(getRutaImagen(rd.getCarta())));
+                } catch (Exception e) {
+                    System.err.println("Error al cargar imagen: " + getRutaImagen(rd.getCarta()));
+                }
+            }
+        }
+    }
+
+    private void actualizarVistaFoundation() {
+        for (int i = 0; i < foundationViews.size(); i++) {
+            FoundationDeck fd = (FoundationDeck) eightOff.getFoundation().buscaPosicion(i);
+            ImageView iv = foundationViews.get(i);
+
+            if (fd == null || fd.estaVacio())
+                iv.setImage(null);
+            else 
+            {
+                try 
+                {
+                    iv.setImage(new Image(getRutaImagen(fd.getUltimaCarta())));
+                } catch (Exception e) {
+                     System.err.println("Error al cargar imagen: " + getRutaImagen(fd.getUltimaCarta()));
+                }
+            }
+        }
+    }
+    
+    private void conectarBotonesMenu() {
+        salirJuegoBoton.setOnAction(e -> Platform.exit());
+        
+        tableauATableauBoton.setOnAction(e -> iniciarMovimiento(TipoMovimiento.TABLEAU_TO_TABLEAU));
+        tableauAFoundationBoton.setOnAction(e -> iniciarMovimiento(TipoMovimiento.TABLEAU_TO_FOUNDATION));
+        tableauAReservaBoton.setOnAction(e -> iniciarMovimiento(TipoMovimiento.TABLEAU_TO_RESERVE));
+        reservaATableauBoton.setOnAction(e -> iniciarMovimiento(TipoMovimiento.RESERVE_TO_TABLEAU));
+        reservaAFoundationBoton.setOnAction(e -> iniciarMovimiento(TipoMovimiento.RESERVE_TO_FOUNDATION));
+        
+        obtenerPistaBoton.setOnAction(e -> onPistaClick());
+        deshacerMovimientoBoton.setOnAction(e -> onDeshacerClick());
+    }
+
+    private void crearBotonesDeSeleccion() 
+    {
+        contenedorBotonesTableau.getChildren().clear();
+        contenedorBotonesReserva.getChildren().clear();
+
+        contenedorBotonesTableau.setPadding(new Insets(0, 0, 0, 55));
+        contenedorBotonesTableau.setSpacing(20);
+        contenedorBotonesReserva.setPadding(new Insets(0, 0, 0, 150));
+        contenedorBotonesReserva.setSpacing(20);
+
+
+        for (int i = 0; i < 8; i++) 
+        {
+            final int index = i;
+            
+            Button btnT = new Button(String.valueOf(i + 1));
+            btnT.setPrefWidth(80); // Ancho de la carta
+            btnT.setFont(new Font("Arial Bold", 14));
+            btnT.setOnAction(e -> onTableauButtonClicked(index));
+            contenedorBotonesTableau.getChildren().add(btnT);
+            
+            Button btnR = new Button(String.valueOf(i + 1));
+            btnR.setPrefWidth(80); // Ancho de la carta
+            btnR.setFont(new Font("Arial Bold", 14));
+            btnR.setOnAction(e -> onReserveButtonClicked(index));
+            contenedorBotonesReserva.getChildren().add(btnR);
+        }
+    }
+
+
+    private void iniciarMovimiento(TipoMovimiento type) 
+    {
+        resetMoveState();
+        currentMoveType = type;
+        
+        switch (type) 
+        {
+            case TABLEAU_TO_TABLEAU:
+            case TABLEAU_TO_RESERVE:
+            case TABLEAU_TO_FOUNDATION:
+                contenedorBotonesTableau.setVisible(true);
+                break;
+            case RESERVE_TO_TABLEAU:
+            case RESERVE_TO_FOUNDATION:
+                contenedorBotonesReserva.setVisible(true);
+                break;
+            case NONE:
+                break;
+        }
+    }
+
+    private void onTableauButtonClicked(int index) {
+        if (origenIdx == -1) 
+        {
+            origenIdx = index;
+            Pane selectedPane = tableauPanes.get(index);
+            selectedPane.setStyle("-fx-border-color: yellow; -fx-border-width: 3; -fx-border-radius: 5;");
+            
+            contenedorBotonesTableau.setVisible(false);
+
+            switch (currentMoveType) 
+            {
+                case TABLEAU_TO_TABLEAU:
+                    contenedorBotonesTableau.setVisible(true);
+                    break;
+                case TABLEAU_TO_RESERVE:
+                    contenedorBotonesReserva.setVisible(true);
+                    break;
+                case TABLEAU_TO_FOUNDATION:
+                    ejecutarMovimiento(-1);
+                    break;
+            }
+        } 
+        else
+            ejecutarMovimiento(index);
+    }
+
+    private void onReserveButtonClicked(int index) 
+    {
+        if (origenIdx == -1) 
+        {
+            origenIdx = index;
+            ImageView selectedView = reserveViews.get(index);
+            selectedView.setStyle("-fx-border-color: yellow; -fx-border-width: 3; -fx-border-radius: 5;");
+            contenedorBotonesReserva.setVisible(false);
+
+            switch (currentMoveType) 
+            {
+                case RESERVE_TO_TABLEAU:
+                    contenedorBotonesTableau.setVisible(true);
+                break;
+                case RESERVE_TO_FOUNDATION:
+                    ejecutarMovimiento(-1);
+                break;
+            }
+        } 
+        else
+            ejecutarMovimiento(index);
+    }
+
+    private void ejecutarMovimiento(int destinoIdx) 
+    {
+        boolean exito = false;
+        
+        switch (currentMoveType) 
+        {
+            case TABLEAU_TO_TABLEAU:
+                exito = eightOff.moveTableauToTableau(origenIdx, destinoIdx);
+            break;
+            case TABLEAU_TO_RESERVE:
+                exito = eightOff.moveTableauToReserva(origenIdx, destinoIdx);
+            break;
+            case TABLEAU_TO_FOUNDATION:
+                exito = eightOff.moveTableauToFoundation(origenIdx);
+            break;
+            case RESERVE_TO_TABLEAU:
+                exito = eightOff.moveReservaToTableau(origenIdx, destinoIdx);
+            break;
+            case RESERVE_TO_FOUNDATION:
+                exito = eightOff.moveReservaToFoundation(origenIdx);
+            break;
+        }
+        postMovimiento(exito);
+        resetMoveState();
+    }
+
+    private void resetMoveState() 
+    {
+        currentMoveType = TipoMovimiento.NONE;
+        origenIdx = -1;
+        clearAllBorders();
+        
+        if (contenedorBotonesTableau != null) 
+            contenedorBotonesTableau.setVisible(false);
+        if (contenedorBotonesReserva != null) 
+            contenedorBotonesReserva.setVisible(false);
+    }
+    
+
+    private void onPistaClick() 
+    {
+        String pista = eightOff.buscarPista();
+        mostrarAlerta("Pista", (pista != null ? pista : "No hay movimientos disponibles."), Alert.AlertType.INFORMATION);
+    }
+
+    private void onDeshacerClick() 
+    {
+        boolean exito = eightOff.deshacerMovimiento();
+        if (exito)
+            actualizarTodasLasVistas();
+        else
+            mostrarAlerta("Deshacer", "No hay movimientos que deshacer.", Alert.AlertType.WARNING);
+    }
+
+    private String getRutaImagen(CartaInglesa carta) 
+    {
+        if (carta == null) 
+            return null;
+        
+        String valorRuta = String.valueOf(carta.getValor());
+
+        String paloRuta;
+        switch (carta.getPalo()) 
+        {
+            case TREBOL: 
+                paloRuta = "clubs"; 
+            break;
+            case DIAMANTE: 
+                paloRuta = "diamonds"; 
+            break;
+            case CORAZON: 
+                paloRuta = "hearts"; 
+            break;
+            case PICA: 
+                paloRuta = "spades"; 
+            break;
+            default: 
+                paloRuta = "error"; 
+            break;
+        }
+        
+        String nombreArchivo = valorRuta + "_of_" + paloRuta + ".png";
+        
+        try 
+        {
+            return getClass().getResource(nombreArchivo).toExternalForm();
+        } 
+        catch (NullPointerException e) 
+        {
+            System.err.println("No se pudo encontrar la imagen: " + nombreArchivo);
+            return null;
+        }
+    }
+    
+    private void postMovimiento(boolean exito) 
+    {
+        actualizarTodasLasVistas();
+        
+        if (!exito) 
+        {
+            mostrarAlerta("Movimiento Inválido", "Has intentado hacer un movimiento ilegal.", Alert.AlertType.WARNING);
+            return;
+        }
+
+        if (eightOff.isGameOver()) 
+        {
+            mostrarAlerta("¡Enhorabuena!", "¡Has ganado el juego!", Alert.AlertType.INFORMATION);
+        } 
+        else 
+            if (eightOff.isJuegoBloqueado()) 
+            {
+                mostrarAlerta("Juego perdido", "Ya no hay movimientos disponibles.", Alert.AlertType.ERROR);
+            }
+    }
+    
+    private void mostrarAlerta(String titulo, String contenido, Alert.AlertType tipo) 
+    {
+        Alert alert = new Alert(tipo);
+        alert.setTitle(titulo);
+        alert.setHeaderText(null);
+        alert.setContentText(contenido);
+        alert.showAndWait();
+    }
+    
+    private void clearAllBorders() 
+    {
+    if (tableauPanes != null)
+        for (Pane pane : tableauPanes)
+            pane.setStyle("");
+    if (reserveViews != null)
+        for (ImageView view : reserveViews)
+            view.setStyle("");
+    }
+}
