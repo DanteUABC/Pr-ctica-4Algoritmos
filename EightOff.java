@@ -6,7 +6,8 @@ public class EightOff
     private ListaSimple<TableauDeck> tableau = new ListaSimple();
     private ListaSimple<ReserveDeck> reserva = new ListaSimple();
     private ListaSimple<FoundationDeck> foundation = new ListaSimple();
-    private ListaSimple<Movimiento> historial = new ListaSimple<>();
+    private ListaDoble<Movimiento> historial = new ListaDoble<>();
+    private NodoDoble<Movimiento> punteroHistorial = null;
     private FoundationDeck lastFoundationUpdated;
     
     public EightOff()
@@ -40,136 +41,181 @@ public class EightOff
         }
     }
     
-    public boolean moveTableauToTableau(int posicionOrigen, int posicionDestino)
+    private boolean ejecutarT2F(int posTableau) 
     {
-        TableauDeck origen = (TableauDeck) tableau.buscaPosicion(posicionOrigen);
-        TableauDeck destino = (TableauDeck) tableau.buscaPosicion(posicionDestino);
-        int maxCartasMovibles = getCeldasReservaLibres() + 1;
-        ListaSimple<CartaInglesa> secuencia = origen.getSecuenciaValidaAlFinal();
-        CartaInglesa baseSecuencia = (CartaInglesa) secuencia.getPrimerDato();
-        int tamSecuencia = secuencia.getTamano();
-        boolean sePuedeMoverEscalera = false;
-        
-        if (posicionOrigen == posicionDestino) 
-            return false;
-        if (origen == null || destino == null || origen.isEmpty())
-            return false;
-        if (tamSecuencia <= maxCartasMovibles && destino.sePuedeAgregarCarta(baseSecuencia))
-            sePuedeMoverEscalera = true;
-
-        if (sePuedeMoverEscalera)
-        {
-            origen.removerUltimasCartas(tamSecuencia);
-            destino.agregarBloqueDeCartas(secuencia);
-            
-            Movimiento movimiento = new Movimiento(TipoMazo.TABLEAU, posicionOrigen, TipoMazo.TABLEAU, posicionDestino, secuencia);
-            historial.insertarInicio(movimiento);
+        TableauDeck td = tableau.buscaPosicion(posTableau);
+        if (td == null || td.isEmpty()) return false;
+        CartaInglesa c = td.getUltimaCarta();
+        FoundationDeck fd = foundation.buscaPosicion(c.getPalo().ordinal());
+        if (fd.agregarCarta(c)) { 
+            td.removerUltimaCarta();
+            lastFoundationUpdated = fd;
             return true;
-        }
-        
-        if (tamSecuencia > 1) 
-        {
-            CartaInglesa unaCarta = origen.getUltimaCarta();
-            if (destino.sePuedeAgregarCarta(unaCarta))
-            {
-                origen.removerUltimaCarta(); 
-                destino.agregarCarta(unaCarta);
-                
-                ListaSimple<CartaInglesa> unaCartaList = new ListaSimple<>();
-                unaCartaList.insertarInicio(unaCarta);
-                Movimiento movimiento = new Movimiento(TipoMazo.TABLEAU, posicionOrigen, TipoMazo.TABLEAU, posicionDestino, unaCartaList);
-                historial.insertarInicio(movimiento);
-                return true;
-            }
         }
         return false;
     }
     
-    public boolean moveTableauToFoundation(int posTableau)
+    private boolean ejecutarT2R(int posTableau, int posReserva) 
     {
-        TableauDeck td = (TableauDeck) tableau.buscaPosicion(posTableau);
-        if (td == null || td.isEmpty()) 
+        TableauDeck td = tableau.buscaPosicion(posTableau);
+        ReserveDeck rd = reserva.buscaPosicion(posReserva);
+        if (td == null || rd == null || td.isEmpty() || !rd.isEmpty()) return false;
+        CartaInglesa c = td.getUltimaCarta();
+        if (rd.agregarCarta(c)) {
+            td.removerUltimaCarta();
+            return true;
+        }
+        return false;
+    }
+    
+    private boolean ejecutarR2T(int posReserva, int posTableau) 
+    {
+        ReserveDeck rd = reserva.buscaPosicion(posReserva);
+        TableauDeck td = tableau.buscaPosicion(posTableau);
+        if (rd == null || td == null || rd.isEmpty()) 
             return false;
+        CartaInglesa c = rd.getCarta();
+        if (td.agregarCarta(c)) {
+            rd.removerCarta(); 
+            return true;
+        }
+        return false;
+    }
+    
+    private boolean ejecutarR2F(int posReserva) 
+    {
+        ReserveDeck rd = reserva.buscaPosicion(posReserva);
+        if (rd == null || rd.isEmpty()) 
+            return false;
+        CartaInglesa c = rd.getCarta();
+        FoundationDeck fd = foundation.buscaPosicion(c.getPalo().ordinal());
+        if (fd.agregarCarta(c)) 
+        {
+            rd.removerCarta(); 
+            lastFoundationUpdated = fd;
+            return true;
+        }
+        return false;
+    }
+    
+    private boolean ejecutarMovimientoGuardado(Movimiento mov) 
+    {
+        if (mov == null) 
+            return false;
+        switch(mov.getTipoOrigen()) {
+            case TABLEAU:
+                switch(mov.getTipoDestino()) {
+                    case TABLEAU:
+                        TableauDeck origenT = tableau.buscaPosicion(mov.getIdOrigen());
+                        TableauDeck destinoT = tableau.buscaPosicion(mov.getIdDestino());
+                        if (destinoT.sePuedeAgregarCarta(mov.getCartasMovidas().getPrimerDato())) 
+                        {
+                           origenT.removerUltimasCartas(mov.getCartasMovidas().getTamano());
+                           destinoT.agregarBloqueDeCartas(mov.getCartasMovidas());
+                           return true;
+                        }
+                        return false;
+                    case FOUNDATION:
+                        return ejecutarT2F(mov.getIdOrigen());
+                    case RESERVA:
+                        return ejecutarT2R(mov.getIdOrigen(), mov.getIdDestino());
+                }
+                break;
+            case RESERVA:
+                 switch(mov.getTipoDestino()) {
+                    case TABLEAU:
+                        return ejecutarR2T(mov.getIdOrigen(), mov.getIdDestino());
+                    case FOUNDATION:
+                        return ejecutarR2F(mov.getIdOrigen());
+                 }
+                break;
+        }
+        return false;
+    }
+    
+    public boolean moveTableauToTableau(int posOrigen, int posDestino) 
+    {
+        ListaSimple<CartaInglesa> cartasMovidas = getCartasMovidasT2T(posOrigen, posDestino);
+        if (cartasMovidas == null) return false;
+
+        TableauDeck origenT = tableau.buscaPosicion(posOrigen);
+        TableauDeck destinoT = tableau.buscaPosicion(posDestino);
+        origenT.removerUltimasCartas(cartasMovidas.getTamano());
+        destinoT.agregarBloqueDeCartas(cartasMovidas);
         
+        historial.cortarDesdeUnNodo(punteroHistorial);
+        Movimiento mov = new Movimiento(TipoMazo.TABLEAU, posOrigen, TipoMazo.TABLEAU, posDestino, cartasMovidas);
+        punteroHistorial = historial.insertarDespuesDeUnNodo(punteroHistorial, mov);
+        return true;
+    }
+    
+    public boolean moveTableauToFoundation(int posTableau) {
+        TableauDeck td = tableau.buscaPosicion(posTableau);
+        if (td == null || td.isEmpty()) return false;
         CartaInglesa c = td.getUltimaCarta();
         int cualFoundation = c.getPalo().ordinal();
-        FoundationDeck fd = (FoundationDeck) foundation.buscaPosicion(cualFoundation);
-        
-        if (fd.agregarCarta(c)) 
-        { 
-            td.removerUltimaCarta();
-            lastFoundationUpdated = fd;
-            
+
+        if (ejecutarT2F(posTableau)) 
+        {
+            historial.cortarDesdeUnNodo(punteroHistorial);
             ListaSimple<CartaInglesa> movidas = new ListaSimple<>();
             movidas.insertarInicio(c);
             Movimiento mov = new Movimiento(TipoMazo.TABLEAU, posTableau, TipoMazo.FOUNDATION, cualFoundation, movidas);
-            historial.insertarInicio(mov);
+            punteroHistorial = historial.insertarDespuesDeUnNodo(punteroHistorial, mov);
             return true;
         }
         return false;
     }
     
-    public boolean moveReservaToFoundation(int posReserva)
+    public boolean moveReservaToFoundation(int posReserva) 
     {
-        ReserveDeck rd = (ReserveDeck) reserva.buscaPosicion(posReserva);
-        if (rd == null || rd.isEmpty()) 
-            return false;
-        
+        ReserveDeck rd = reserva.buscaPosicion(posReserva);
+        if (rd == null || rd.isEmpty()) return false;
         CartaInglesa c = rd.getCarta();
         int cualFoundation = c.getPalo().ordinal();
-        FoundationDeck fd = (FoundationDeck) foundation.buscaPosicion(cualFoundation);
-        
-        if (fd.agregarCarta(c)) 
+
+        if (ejecutarR2F(posReserva)) 
         {
-            rd.removerCarta(); 
-            lastFoundationUpdated = fd;
+            historial.cortarDesdeUnNodo(punteroHistorial);
             ListaSimple<CartaInglesa> movidas = new ListaSimple<>();
             movidas.insertarInicio(c);
             Movimiento mov = new Movimiento(TipoMazo.RESERVA, posReserva, TipoMazo.FOUNDATION, cualFoundation, movidas);
-            historial.insertarInicio(mov);
+            punteroHistorial = historial.insertarDespuesDeUnNodo(punteroHistorial, mov);
             return true;
         }
         return false;
     }
     
-    public boolean moveReservaToTableau(int posReserva, int posTableau)
+    public boolean moveReservaToTableau(int posReserva, int posTableau) 
     {
-        ReserveDeck rd = (ReserveDeck) reserva.buscaPosicion(posReserva);
-        TableauDeck td = (TableauDeck) tableau.buscaPosicion(posTableau);
-        
-        if (rd == null || td == null || rd.isEmpty()) return false;
-        
+        ReserveDeck rd = reserva.buscaPosicion(posReserva);
+        if (rd == null || rd.isEmpty()) return false;
         CartaInglesa c = rd.getCarta();
-        
-        if (td.agregarCarta(c)) 
+
+        if (ejecutarR2T(posReserva, posTableau)) 
         {
-            rd.removerCarta(); 
+            historial.cortarDesdeUnNodo(punteroHistorial);
             ListaSimple<CartaInglesa> movidas = new ListaSimple<>();
             movidas.insertarInicio(c);
             Movimiento mov = new Movimiento(TipoMazo.RESERVA, posReserva, TipoMazo.TABLEAU, posTableau, movidas);
-            historial.insertarInicio(mov);
+            punteroHistorial = historial.insertarDespuesDeUnNodo(punteroHistorial, mov);
             return true;
         }
         return false;
     }
     
-    public boolean moveTableauToReserva(int posTableau, int posReserva)
+    public boolean moveTableauToReserva(int posTableau, int posReserva) 
     {
-        TableauDeck td = (TableauDeck) tableau.buscaPosicion(posTableau);
-        ReserveDeck rd = (ReserveDeck) reserva.buscaPosicion(posReserva);
-
-        if (td == null || rd == null || td.isEmpty() || !rd.isEmpty())
-            return false;
-        
+        TableauDeck td = tableau.buscaPosicion(posTableau);
+        if (td == null || td.isEmpty()) return false;
         CartaInglesa c = td.getUltimaCarta();
-        
-        if (rd.agregarCarta(c)) {
-            td.removerUltimaCarta();
-            
+
+        if (ejecutarT2R(posTableau, posReserva)) {
+            historial.cortarDesdeUnNodo(punteroHistorial);
             ListaSimple<CartaInglesa> movidas = new ListaSimple<>();
             movidas.insertarInicio(c);
             Movimiento mov = new Movimiento(TipoMazo.TABLEAU, posTableau, TipoMazo.RESERVA, posReserva, movidas);
-            historial.insertarInicio(mov);
+            punteroHistorial = historial.insertarDespuesDeUnNodo(punteroHistorial, mov);
             return true;
         }
         return false;
@@ -202,48 +248,6 @@ public class EightOff
             r = r.getSig();
         }
         return true; 
-    }
-    
-    public boolean deshacerMovimiento() {
-        if (historial.isEmpty()) 
-        {
-            System.out.println("No hay movimientos que deshacer.");
-            return false;
-        }
-
-        Movimiento movimiento = historial.eliminarInicio();
-        ListaSimple<CartaInglesa> cartasADevolver = movimiento.getCartasMovidas();
-
-        switch(movimiento.getTipoDestino()) 
-        {
-            case TABLEAU:
-                TableauDeck td = (TableauDeck) tableau.buscaPosicion(movimiento.getIdDestino());
-                td.removerUltimasCartas(cartasADevolver.getTamano());
-                break;
-            case RESERVA:
-                ReserveDeck rd = (ReserveDeck) reserva.buscaPosicion(movimiento.getIdDestino());
-                rd.removerCarta();
-                break;
-            case FOUNDATION:
-                FoundationDeck fd = (FoundationDeck) foundation.buscaPosicion(movimiento.getIdDestino());
-                fd.removerUltimaCarta();
-                break;
-        }
-
-        switch(movimiento.getTipoOrigen()) 
-        {
-            case TABLEAU:
-                TableauDeck td = (TableauDeck) tableau.buscaPosicion(movimiento.getIdOrigen());
-                td.agregarBloqueCartasUndo(cartasADevolver);
-                break;
-            case RESERVA:
-                ReserveDeck rd = (ReserveDeck) reserva.buscaPosicion(movimiento.getIdOrigen());
-                rd.agregarCarta((CartaInglesa) cartasADevolver.getPrimerDato());
-                break;
-            case FOUNDATION:
-                break;
-        }
-        return true;
     }
     
     private boolean puedeMoverDeTableauATableau(int posOrigen, int posDestino) 
@@ -325,6 +329,90 @@ public class EightOff
         return null;
     }
     
+    public boolean deshacerMovimiento() {
+        if (!canUndo()) {
+            System.out.println("No hay movimientos que deshacer.");
+            return false;
+        }
+
+        Movimiento mov = punteroHistorial.getInfo();
+        ListaSimple<CartaInglesa> cartasADevolver = mov.getCartasMovidas();
+        
+        switch(mov.getTipoDestino()) {
+            case TABLEAU:
+                TableauDeck td = tableau.buscaPosicion(mov.getIdDestino());
+                td.removerUltimasCartas(cartasADevolver.getTamano());
+                break;
+            case RESERVA:
+                ReserveDeck rd = reserva.buscaPosicion(mov.getIdDestino());
+                rd.removerCarta();
+                break;
+            case FOUNDATION:
+                FoundationDeck fd = foundation.buscaPosicion(mov.getIdDestino());
+                fd.removerUltimaCarta();
+                break;
+        }
+        
+        switch(mov.getTipoOrigen()) {
+            case TABLEAU:
+                TableauDeck td = tableau.buscaPosicion(mov.getIdOrigen());
+                td.agregarBloqueCartasUndo(cartasADevolver); 
+                break;
+            case RESERVA:
+                ReserveDeck rd = reserva.buscaPosicion(mov.getIdOrigen());
+                rd.agregarCarta(cartasADevolver.getPrimerDato());
+                break;
+        }
+        
+        punteroHistorial = punteroHistorial.getAnt();
+        return true;
+    }
+    
+    public boolean rehacerMovimiento() {
+        if (!canRedo()) {
+            System.out.println("No hay movimientos que rehacer.");
+            return false;
+        }
+        
+        NodoDoble<Movimiento> nodoSiguiente = (punteroHistorial == null) 
+                                                ? historial.getInicio() 
+                                                : punteroHistorial.getSig();
+        
+        if (ejecutarMovimientoGuardado(nodoSiguiente.getInfo())) {
+            punteroHistorial = nodoSiguiente;
+            return true;
+        }
+        return false;
+    }
+    
+    public void revertirAEstado(NodoDoble<Movimiento> estadoObjetivo) 
+    {
+        while (punteroHistorial != estadoObjetivo && canUndo()) {
+            deshacerMovimiento();
+        }
+        while (punteroHistorial != estadoObjetivo && canRedo()) {
+            rehacerMovimiento();
+        }
+    }
+    
+    public void cortarHistorialDesdePuntero() 
+    {
+        historial.cortarDesdeUnNodo(punteroHistorial);
+    }
+    
+    public boolean canUndo() 
+    {
+        return punteroHistorial != null;
+    }
+    public boolean canRedo() {
+        if (punteroHistorial == null) return !historial.isEmpty();
+        return punteroHistorial.getSig() != null;
+    }
+    
+    public Movimiento getMovimientoActual() {
+        return (punteroHistorial == null) ? null : punteroHistorial.getInfo();
+    }
+    
     public boolean isJuegoBloqueado() 
     {
         return buscarPista() == null;
@@ -378,6 +466,33 @@ public class EightOff
         return tableau;
     }
     
+    private ListaSimple<CartaInglesa> getCartasMovidasT2T(int posOrigen, int posDestino) {
+        TableauDeck origen = tableau.buscaPosicion(posOrigen);
+        TableauDeck destino = tableau.buscaPosicion(posDestino);
+        if (origen == null || destino == null || origen.isEmpty()) return null;
+            
+        int maxCartasMovibles = getCeldasReservaLibres() + 1;
+        ListaSimple<CartaInglesa> secuencia = origen.getSecuenciaValidaAlFinal();
+        if (secuencia.isEmpty()) return null;
+        
+        int tamSecuencia = secuencia.getTamano();
+        CartaInglesa baseSecuencia = secuencia.getPrimerDato();
+        
+        if (tamSecuencia <= maxCartasMovibles && destino.sePuedeAgregarCarta(baseSecuencia)) {
+            return secuencia;
+        }
+       
+        if (tamSecuencia > 1) {
+            CartaInglesa unaCarta = origen.getUltimaCarta();
+            if (destino.sePuedeAgregarCarta(unaCarta)) {
+                ListaSimple<CartaInglesa> unaCartaList = new ListaSimple<>();
+                unaCartaList.insertarInicio(unaCarta);
+                return unaCartaList;
+            }
+        }
+        return null;
+    }
+    
     public FoundationDeck getLastFoundationUpdated()
     {
         return lastFoundationUpdated;
@@ -391,5 +506,10 @@ public class EightOff
     public ListaSimple getReserva() 
     {
         return reserva;
+    }
+    
+    public NodoDoble getPunteroHistorial()
+    {
+        return punteroHistorial;
     }
 }
