@@ -8,12 +8,18 @@ import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import static javafx.scene.paint.Color.BLACK;
 import javafx.scene.text.Font;
 
 public class EightOffGUIController implements Initializable 
@@ -24,6 +30,13 @@ public class EightOffGUIController implements Initializable
     private List<ImageView> reserveViews;
     private List<Pane> tableauPanes;
     private List<ImageView> foundationViews;
+    private boolean enModoHistorial = false;
+    private NodoDoble<Movimiento> punteroJuegoReal;
+    private List<Button> botonesJuego;
+    private VBox historialBox;
+    private Label visorHistorialLabel;
+    private Button undoBotonVisor, redoBotonVisor, aplicarEstadoBoton, cancelarHistorialBoton;
+    
 
     @FXML private HBox contenedorBotonesReserva;
     @FXML private HBox contenedorBotonesTableau;
@@ -55,6 +68,8 @@ public class EightOffGUIController implements Initializable
     @FXML private Button tableauAReservaBoton;
     @FXML private Button tableauATableauBoton;
     @FXML private Pane tableauPane1, tableauPane2, tableauPane3, tableauPane4, tableauPane5, tableauPane6, tableauPane7, tableauPane8;
+    @FXML private Button verHistorialBoton;
+    @FXML private VBox menuBox;
 
     
     @Override
@@ -67,22 +82,31 @@ public class EightOffGUIController implements Initializable
         tableauPanes = Arrays.asList(tableauPane1, tableauPane2, tableauPane3, tableauPane4, tableauPane5, tableauPane6, tableauPane7, tableauPane8);
         foundationViews = Arrays.asList(foundationClubImg, foundationDiamondImg, foundationHeartImg, foundationSpadeImg);
 
+        botonesJuego = Arrays.asList(tableauATableauBoton, tableauAFoundationBoton, 
+                tableauAReservaBoton, reservaATableauBoton, reservaAFoundationBoton, 
+                obtenerPistaBoton, deshacerMovimientoBoton);
+
         conectarBotonesMenu();
 
         crearBotonesDeSeleccion();
-        resetMoveState();
 
+        crearBotonesHistorial(); 
+
+        resetMoveState();
         actualizarTodasLasVistas();
+        actualizarBotonesHistorial();
     }
 
-    private void actualizarTodasLasVistas() {
+    private void actualizarTodasLasVistas() 
+    {
         actualizarVistaTableau();
         actualizarVistaReserva();
         actualizarVistaFoundation();
     }
 
     private void actualizarVistaTableau() {
-        for (int i = 0; i < tableauPanes.size(); i++) {
+        for (int i = 0; i < tableauPanes.size(); i++) 
+        {
             Pane currentPane = tableauPanes.get(i);
             currentPane.getChildren().clear();
 
@@ -111,7 +135,8 @@ public class EightOffGUIController implements Initializable
                     
                     currentPane.getChildren().add(cartaVista);
                     
-                } catch (Exception e) 
+                } 
+                catch (Exception e) 
                 {
                     System.err.println("Error al cargar imagen: " + getRutaImagen(carta));
                 }
@@ -122,7 +147,8 @@ public class EightOffGUIController implements Initializable
         }
     }
 
-    private void actualizarVistaReserva() {
+    private void actualizarVistaReserva() 
+    {
         for (int i = 0; i < reserveViews.size(); i++) 
         {
             ReserveDeck rd = (ReserveDeck) eightOff.getReserva().buscaPosicion(i);
@@ -141,8 +167,10 @@ public class EightOffGUIController implements Initializable
         }
     }
 
-    private void actualizarVistaFoundation() {
-        for (int i = 0; i < foundationViews.size(); i++) {
+    private void actualizarVistaFoundation() 
+    {
+        for (int i = 0; i < foundationViews.size(); i++) 
+        {
             FoundationDeck fd = (FoundationDeck) eightOff.getFoundation().buscaPosicion(i);
             ImageView iv = foundationViews.get(i);
 
@@ -153,14 +181,17 @@ public class EightOffGUIController implements Initializable
                 try 
                 {
                     iv.setImage(new Image(getRutaImagen(fd.getUltimaCarta())));
-                } catch (Exception e) {
+                } 
+                catch (Exception e) 
+                {
                      System.err.println("Error al cargar imagen: " + getRutaImagen(fd.getUltimaCarta()));
                 }
             }
         }
     }
     
-    private void conectarBotonesMenu() {
+    private void conectarBotonesMenu() 
+    {
         salirJuegoBoton.setOnAction(e -> Platform.exit());
         
         tableauATableauBoton.setOnAction(e -> iniciarMovimiento(TipoMovimiento.TABLEAU_TO_TABLEAU));
@@ -171,6 +202,8 @@ public class EightOffGUIController implements Initializable
         
         obtenerPistaBoton.setOnAction(e -> onPistaClick());
         deshacerMovimientoBoton.setOnAction(e -> onDeshacerClick());
+        
+        verHistorialBoton.setOnAction(e -> onVerHistorialClick());
     }
 
     private void crearBotonesDeSeleccion() 
@@ -189,27 +222,73 @@ public class EightOffGUIController implements Initializable
             final int index = i;
             
             Button btnT = new Button(String.valueOf(i + 1));
-            btnT.setPrefWidth(80); // Ancho de la carta
+            btnT.setPrefWidth(80); 
             btnT.setFont(new Font("Arial Bold", 14));
             btnT.setOnAction(e -> onTableauButtonClicked(index));
             contenedorBotonesTableau.getChildren().add(btnT);
             
             Button btnR = new Button(String.valueOf(i + 1));
-            btnR.setPrefWidth(80); // Ancho de la carta
+            btnR.setPrefWidth(80);
             btnR.setFont(new Font("Arial Bold", 14));
             btnR.setOnAction(e -> onReserveButtonClicked(index));
             contenedorBotonesReserva.getChildren().add(btnR);
         }
     }
+    
+    private void crearBotonesHistorial() {
+        int indiceBotonHistorial;
+        
+        historialBox = new VBox(10);
+        historialBox.setPadding(new Insets(220, 10, 10, 10));
+        historialBox.setAlignment(Pos.CENTER);
+        
+        visorHistorialLabel = new Label("Visor de Historial");
+        
+        aplicarEstadoBoton = new Button("Aplicar");
+        aplicarEstadoBoton.setFont(new Font("System", 12));
+        aplicarEstadoBoton.setStyle("-fx-background-color: black; -fx-text-fill: white; -fx-font-size: 12px;");
+        aplicarEstadoBoton.setOnAction(e -> onAplicarEstadoClick());
+        aplicarEstadoBoton.setMaxWidth(Double.MAX_VALUE);
+        
+        cancelarHistorialBoton = new Button("Cancelar");
+        cancelarHistorialBoton.setFont(new Font("System", 12));
+        cancelarHistorialBoton.setStyle("-fx-background-color: black; -fx-text-fill: white; -fx-font-size: 12px;");
+        cancelarHistorialBoton.setOnAction(e -> onCancelarHistorialClick());
+        cancelarHistorialBoton.setMaxWidth(Double.MAX_VALUE);
+        
+        HBox undoRedoBox = new HBox(10);
+        undoRedoBox.setAlignment(Pos.CENTER);
+        
+        undoBotonVisor = new Button("<<");
+        undoBotonVisor.setFont(new Font("System", 12));
+        undoBotonVisor.setStyle("-fx-background-color: black; -fx-text-fill: white; -fx-font-size: 12px;");
+        undoBotonVisor.setOnAction(e -> onVisorUndoClick());
+        
+        redoBotonVisor = new Button(">>");
+        redoBotonVisor.setFont(new Font("System", 12));
+        redoBotonVisor.setStyle("-fx-background-color: black; -fx-text-fill: white; -fx-font-size: 12px;");
+        redoBotonVisor.setOnAction(e -> onVisorRedoClick());
+        
+        undoRedoBox.getChildren().addAll(undoBotonVisor, redoBotonVisor);
+
+        historialBox.getChildren().addAll(visorHistorialLabel, aplicarEstadoBoton, cancelarHistorialBoton, undoRedoBox);        
+        
+        indiceBotonHistorial = menuBox.getChildren().indexOf(verHistorialBoton);
+        menuBox.getChildren().add(indiceBotonHistorial + 1, historialBox);
+        
+        historialBox.setVisible(false);
+        historialBox.setManaged(false);
+    }
 
 
     private void iniciarMovimiento(TipoMovimiento type) 
     {
-        resetMoveState();
+        if (enModoHistorial) 
+            return;
+        resetMoveState(); 
         currentMoveType = type;
         
-        switch (type) 
-        {
+        switch (type) {
             case TABLEAU_TO_TABLEAU:
             case TABLEAU_TO_RESERVE:
             case TABLEAU_TO_FOUNDATION:
@@ -217,14 +296,13 @@ public class EightOffGUIController implements Initializable
                 break;
             case RESERVE_TO_TABLEAU:
             case RESERVE_TO_FOUNDATION:
-                contenedorBotonesReserva.setVisible(true);
-                break;
-            case NONE:
+                contenedorBotonesReserva.setVisible(true); 
                 break;
         }
     }
 
-    private void onTableauButtonClicked(int index) {
+    private void onTableauButtonClicked(int index)
+    {
         if (origenIdx == -1) 
         {
             origenIdx = index;
@@ -314,18 +392,119 @@ public class EightOffGUIController implements Initializable
 
     private void onPistaClick() 
     {
+        if (enModoHistorial) 
+            return;
+        resetMoveState(); 
         String pista = eightOff.buscarPista();
         mostrarAlerta("Pista", (pista != null ? pista : "No hay movimientos disponibles."), Alert.AlertType.INFORMATION);
     }
 
     private void onDeshacerClick() 
     {
-        boolean exito = eightOff.deshacerMovimiento();
+        boolean exito;
+        if (enModoHistorial) return;
+            resetMoveState();
+        exito = eightOff.deshacerMovimiento();
         if (exito)
             actualizarTodasLasVistas();
         else
             mostrarAlerta("Deshacer", "No hay movimientos que deshacer.", Alert.AlertType.WARNING);
+        actualizarBotonesHistorial();
     }
+    
+    private void onVerHistorialClick() {
+        enModoHistorial = true;
+        resetMoveState();
+        
+        punteroJuegoReal = eightOff.getPunteroHistorial();
+        
+        mostrarBotonesJuego(false);
+        mostrarBotonesHistorial(true);
+        salirJuegoBoton.setVisible(false);
+        verHistorialBoton.setVisible(false);
+        verHistorialBoton.setManaged(false);
+        
+        actualizarBotonesHistorial();
+    }
+    
+    private void onCancelarHistorialClick() {
+        enModoHistorial = false;
+        
+        eightOff.revertirAEstado(punteroJuegoReal);
+        actualizarTodasLasVistas();
+        
+        mostrarBotonesJuego(true);
+        mostrarBotonesHistorial(false);
+        salirJuegoBoton.setVisible(true);
+        verHistorialBoton.setVisible(true);
+        verHistorialBoton.setManaged(true);
+        
+        clearAllBorders();
+        actualizarBotonesHistorial();
+    }
+    
+    private void onVisorUndoClick() 
+    {
+        if (!eightOff.canUndo()) 
+            return;
+        eightOff.deshacerMovimiento();
+        actualizarTodasLasVistas();
+        actualizarBotonesHistorial();
+    }
+    
+    private void onVisorRedoClick() 
+    {
+        if (!eightOff.canRedo()) 
+            return;
+        eightOff.rehacerMovimiento();
+        actualizarTodasLasVistas();
+        actualizarBotonesHistorial();
+    }
+    
+    private void onAplicarEstadoClick() 
+    {
+        enModoHistorial = false;
+        
+        eightOff.cortarHistorialDesdePuntero();
+        
+        mostrarBotonesJuego(true);
+        mostrarBotonesHistorial(false);
+        salirJuegoBoton.setVisible(true);
+        verHistorialBoton.setVisible(true);
+        verHistorialBoton.setManaged(true);
+        
+        clearAllBorders();
+        actualizarBotonesHistorial();
+        
+        mostrarAlerta("Estado de juego aplicado.", "El estado del juego se ha cambiado correctamente.", Alert.AlertType.INFORMATION);
+    }
+    
+    private void mostrarBotonesJuego(boolean mostrar) 
+    {
+        for (Button btn : botonesJuego) {
+            btn.setVisible(mostrar);
+            btn.setManaged(mostrar);
+        }
+    }
+    
+    private void mostrarBotonesHistorial(boolean mostrar) 
+    {
+        historialBox.setVisible(mostrar);
+        historialBox.setManaged(mostrar);
+    }
+    
+    private void actualizarBotonesHistorial() 
+    {
+        boolean canUndo = eightOff.canUndo();
+        boolean canRedo = eightOff.canRedo();
+        
+        if (enModoHistorial) 
+        {
+            undoBotonVisor.setDisable(!canUndo);
+            redoBotonVisor.setDisable(!canRedo);
+        }
+    }
+    
 
     private String getRutaImagen(CartaInglesa carta) 
     {
